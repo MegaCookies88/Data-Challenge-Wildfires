@@ -2,3 +2,8 @@
 .DS_Store
 Description.pdf
 References/annurev-statistics-031017-100450.pdf
+data/.Rhistory
+.ipynb_checkpoints/wildfires-checkpoint.ipynb
+.gitattributes
+data/data_train.RData
+data/data_train_DF.csv
