@@ -7,3 +7,5 @@ data/.Rhistory
 .gitattributes
 data/data_train.RData
 data/data_train_DF.csv
+references/psw_2004_preisler002_jwf.pdf
+references/ScienceBrief_Review_WILDFIRES_Sep2020.pdf
