@@ -5,6 +5,24 @@ date: "3/27/2021"
 output: html_document
 ---
 
+```{r libraries, include=FALSE}
+library("FactoMineR")
+library("factoextra")
+
+library("pscl")
+
+library("glmnet")
+library("glmnetUtils")
+
+library("doParallel")
+library("parallel")
+
+library("randomForest")
+
+library("mgcv")
+```
+
+
 ```{r data, echo=FALSE}
 
 # Loading the data
@@ -14,8 +32,8 @@ load("~/Documents/Cours/EPFL MA2/R_WorkSpace/Wildfire_Challenge/data_train.RData
 source("scoring_functions.R")
 
 # Challenge benchmark
-S_CNT_bench = 0.075
-S_BA_bench = 0.053
+S_CNT_bench = 6026
+S_BA_bench = 4257
 
 # Wind
 data_train_DF$wind <- scale(sqrt(data_train_DF$clim1^2 + data_train_DF$clim2^2))
@@ -41,7 +59,7 @@ train_ind <- sample(seq_len(nrow(data_train_DF)), size = floor(0.822 * nrow(data
 train <- data_train_DF[train_ind, ]
 test <- data_train_DF[-train_ind, ]
 
-# Training : 95/05/15 - Testing : 07/08
+# Training : 95/05 - Testing : 07
 train <- data_train_DF[data_train_DF$year %in% c(1995,2005),]
 test <- data_train_DF[data_train_DF$year %in% c(2007),]
 
@@ -52,9 +70,6 @@ cat("train size =", nrow(train), "- test size =", nrow(test))
 # Principal Component Analysis (PCA)
 
 ```{r PCA, echo=FALSE, out.width="100%"}
-
-library("FactoMineR")
-library("factoextra")
 
 res.pca <- PCA(data_train_DF[,3:38], graph = FALSE)
 print(res.pca)
@@ -120,45 +135,41 @@ prediction_cnt_prob <- predict_cnt_prob_poisson(m1, test)
 S_CNT_1 <- get_score_cnt(prediction_cnt_prob, test$CNT, u_cnt, weights_cnt)
 cat("S_CNT =", S_CNT_1)
 
-#MLmetrics::MAPE(prediction_cnt[test$CNT>0,], test[test$CNT>0,]$CNT)
-
 ```
 
 ## Zero Inflated Poisson
 
 ```{r zero_poisson, echo=FALSE}
 
-library("pscl")
-
 # Fitting the model
-m0p <- zeroinfl(CNT ~ . -BA -1 -year -clim1 -clim2 -lon -lat -area -altiSD -lc6 -lc17
+mp0 <- zeroinfl(CNT ~ . -BA -1 -year -clim1 -clim2 -lon -lat -area -altiSD -lc6 -lc17
                 | 1, 
                 data = train)
-summary(m0p)
+summary(mp0)
 
 # Prediction
-prediction_cnt_prob <- predict_cnt_prob_zero_poisson(m0p, test)
+prediction_cnt_prob <- predict_cnt_prob_zero_poisson(mp0, test)
   
 # Score
-S_CNT_0p <- get_score_cnt(prediction_cnt_prob, test$CNT, u_cnt, weights_cnt)
-cat("S_CNT =", S_CNT_0p)
+S_CNT_p0 <- get_score_cnt(prediction_cnt_prob, test$CNT, u_cnt, weights_cnt)
+cat("S_CNT =", S_CNT_p0)
 
 ```
 ```{r echo=FALSE}
 
 # Fitting the model
-m1p <- zeroinfl(CNT ~ . -BA -1 -clim1 -clim2 -year -month -lat -altiSD
+mp1 <- zeroinfl(CNT ~ . -BA -1 -clim1 -clim2 -year -month -lat -altiSD
                 + factor(month) 
                 | 1, 
                 data = train)
-summary(m1p)
+summary(mp1)
 
 # Prediction
-prediction_cnt_prob <- predict_cnt_prob_zero_poisson(m1p, test)
+prediction_cnt_prob <- predict_cnt_prob_zero_poisson(mp1, test)
   
 # Score
-S_CNT_1p <- get_score_cnt(prediction_cnt_prob, test$CNT, u_cnt, weights_cnt)
-cat("S_CNT =", S_CNT_1p)
+S_CNT_p1 <- get_score_cnt(prediction_cnt_prob, test$CNT, u_cnt, weights_cnt)
+cat("S_CNT =", S_CNT_p1)
 
 ```
 
@@ -166,34 +177,38 @@ cat("S_CNT =", S_CNT_1p)
 
 ```{r CNT_lasso, echo=FALSE}
 
-library("glmnet")
-library("glmnetUtils")
+registerDoParallel(4)
 
 # Lambda grid
-grid = 10^seq(-2, 2, length = 5)
+grid = 10^seq(-2, 2, length = 100)
 
 # CV
-cv.out <- cv.glmnet(CNT ~ . -BA -clim1 -clim2, 
+cv.CNT <- cv.glmnet(CNT ~ . -BA -clim1 -clim2, 
+                    intercept = TRUE,
                     family = poisson(link="log"),
                     alpha = 1,
                     nfolds = 5,
+                    parallel = TRUE,
+                    lambda = grid,
                     data = train)
-plot(cv.out)
-bestlam = cv.out$lambda.min
+plot(cv.CNT)
+bestlam = cv.CNT$lambda.min
+cat("Best Lambda =", bestlam)
 
 # Fitting the model
 mCNT_lasso <- glmnet(CNT ~ . -BA -clim1 -clim2, 
-          family = poisson(link="log"),
-          alpha = 1,
-          lambda = bestlam,
-          data = train)
+                     intercept = TRUE,
+                     family = poisson(link="log"),
+                     alpha = 1,
+                     lambda = bestlam,
+                     data = train)
 
 # Prediction
 prediction_cnt_prob <- predict_cnt_prob_poisson(mCNT_lasso, test[,-c(1,2,28,29)])
 
 # Score
 S_CNT_lasso <- get_score_cnt(prediction_cnt_prob, test$CNT, u_cnt, weights_cnt)
-cat("S_CNT =", S_CNT_lasso)
+cat("\nS_CNT =", S_CNT_lasso)
 
 ```
 
@@ -225,8 +240,6 @@ cat("S_BA =", S_BA_0)
 
 ```{r echo=FALSE}
 
-library("randomForest")
-
 # Classifier for BA>0
 rf <- randomForest(as.factor(I(BA>0)) ~ . -1 -CNT,
                    data=train)
@@ -253,21 +266,21 @@ cat("S_BA =", S_BA_rf)
 ```
 
 ## GLM Gaussian Id on log(BA+1)
-Tested it on 80k -> better than benchmark with a score of 3963 (about rank 4)
+Tested it on 80k -> better than benchmark with a score of 3932 (about rank 4)
 
 ```{r echo=FALSE}
 
 # Fitting the model
 BAm1 <- glm(log1p(BA) ~ . -1 -CNT -clim1 -clim2 -lc6 -clim6 -lc10 -clim8, 
             family=gaussian(), 
-            data=data_train_DF[train_ind, ])
+            data=train)
 summary(BAm1)
 
 # Prediction
-prediction_ba_prob <- predict_ba_prob_gaussian_1(BAm1, data_train_DF[-train_ind, ])
+prediction_ba_prob <- predict_ba_prob_gaussian_1(BAm1, test)
 
 # Score
-S_BA_1 <- get_score_ba(prediction_ba_prob, data_train_DF[-train_ind, ]$BA, u_ba, weights_ba)
+S_BA_1 <- get_score_ba(prediction_ba_prob, test$BA, u_ba, weights_ba)
 cat("S_BA =", S_BA_1)
 
 ```
@@ -275,29 +288,89 @@ cat("S_BA =", S_BA_1)
 ```{r BA_lasso, eval=FALSE, include=FALSE}
 
 # Lambda grid
-grid = 10^seq(-2, 2, length = 5)
+grid = 10^seq(-3, 3, length = 100)
 
 # CV
-cv.out <- cv.glmnet(log1p(BA) ~ . -1 -CNT -clim1 -clim2, 
+cv.BA <- cv.glmnet(log1p(BA) ~ . -CNT -clim1 -clim2, 
                     family = gaussian(),
                     alpha = 1,
                     nfolds = 5,
+                    parallel = TRUE,
+                    lambda = grid,
                     data = train)
-plot(cv.out)
-bestlam = cv.out$lambda.min
+plot(cv.BA)
+
+bestlam = cv.BA$lambda.min
+cat("Best Lambda =", bestlam)
 
 # Fitting the model
-mBA_lasso <- glmnet(log1p(BA) ~ . -1 -CNT -clim1 -clim2, 
-          family = gaussian(),
-          alpha = 1,
-          lambda = bestlam,
-          data = train)
+mBA_lasso <- glmnet(log1p(BA) ~ . -CNT -clim1 -clim2, 
+                    family = gaussian(),
+                    alpha = 1,
+                    lambda = bestlam,
+                    data = train)
 
-# Prediction (not possible in glmnet to get se.fit so no distribution function)
+# Prediction 
+# not possible in glmnet to get se.fit so no distribution function
+# Funny comment on some forum for glmnet : "I feel like the only people who would request SE's from a penalized regression model are the same type of people who would grossly misinterpret them."
 prediction_cnt_prob <- predict_ba_prob_gaussian_1(mBA_lasso, test[,-c(1,2,28,29)])
 
 # Score
 S_BA_lasso <- get_score_cnt(prediction_bat_prob, test$BA, u_ba, weights_ba)
-cat("S_BA =", S_BA_lasso)
+cat("\nS_BA =", S_BA_lasso)
 
 ```
+
+## GAM Gaussian Id on log(BA+1)
+
+```{r echo=FALSE}
+# lc2+lc3+lc4+lc8+lc11+lc12+lc14+lc17+lc18
+# Activate Multi-Threads and start clock
+start.time <- Sys.time()
+cl <- makeCluster(6)
+
+# Fitting the model
+BAm1s <- bam(log1p(BA) ~ -1 + year + month + s(lon,lat,bs="gp") + s(area,bs="cr",k=12)
+             + s(altiMean,bs="cr",k=12) + s(wind,bs="cr",k=12) + s(RH,bs="cr",k=12)
+             + s(clim4,bs="cc",k=7)
+             + ti(lc12,wind,k=12) + ti(lc11,wind,k=20)
+             + s(lc18),
+             data=train,
+             family=gaussian(),
+             discrete=FALSE,
+             cluster=cl)
+
+# Close Clusters and stop clock
+if (!is.null(cl)) stopCluster(cl)
+end.time <- Sys.time()
+elapsed.time <- round((end.time - start.time), 3)
+
+summary(BAm1s)
+
+# Prediction
+prediction_ba_prob <- predict_ba_prob_gaussian_1(BAm1s, test)
+
+# Score
+S_BA_1s <- get_score_ba(prediction_ba_prob, test$BA, u_ba, weights_ba)
+cat("S_BA =", S_BA_1s)
+
+# Time to fit the model
+cat("\n\nTime to fit the model :", elapsed.time, "s")
+
+```
+
+```{r echo=FALSE}
+
+plot(BAm1s)
+
+gam.check(BAm1s)
+
+```
+
+
+
+
+
+
+
+
