@@ -321,21 +321,22 @@ cat("\nS_BA =", S_BA_lasso)
 
 ```
 
-## GAM Gaussian Id on log(BA+1)
+## GAM Gaussian Id on log(BA+1) 
+3923 full data
 
 ```{r echo=FALSE}
-# lc2+lc3+lc4+lc8+lc11+lc12+lc14+lc17+lc18
+
 # Activate Multi-Threads and start clock
 start.time <- Sys.time()
 cl <- makeCluster(6)
 
 # Fitting the model
-BAm1s <- bam(log1p(BA) ~ -1 + year + month + s(lon,lat,bs="gp") + s(area,bs="cr",k=12)
-             + s(altiMean,bs="cr",k=12) + s(wind,bs="cr",k=12) + s(RH,bs="cr",k=12)
+BAm1s <- bam(log1p(BA) ~ -1 + year + month + s(lon,lat,bs="gp",k=100) + s(area,bs="cr",k=12)
+             + s(altiMean,bs="cr",k=20) + s(wind,bs="cr",k=12) + s(RH,bs="cr",k=12)
              + s(clim4,bs="cc",k=7)
-             + ti(lc12,wind,k=12) + ti(lc11,wind,k=20)
-             + s(lc18),
-             data=train,
+             + ti(lc11,wind,k=12) + ti(lc12,wind,k=12) + ti(lc1,wind,k=12) 
+             + ti(lc7,wind,k=12) + ti(lc14,wind,k=12) + s(lc18,bs="cr",k=12),
+             data=data_train_DF[train_ind,],
              family=gaussian(),
              discrete=FALSE,
              cluster=cl)
@@ -348,25 +349,33 @@ elapsed.time <- round((end.time - start.time), 3)
 summary(BAm1s)
 
 # Prediction
-prediction_ba_prob <- predict_ba_prob_gaussian_1(BAm1s, test)
+prediction_ba_prob <- predict_ba_prob_gaussian_1(BAm1s, data_train_DF[-train_ind,])
 
 # Score
-S_BA_1s <- get_score_ba(prediction_ba_prob, test$BA, u_ba, weights_ba)
+S_BA_1s <- get_score_ba(prediction_ba_prob, data_train_DF[-train_ind,]$BA, u_ba, weights_ba)
 cat("S_BA =", S_BA_1s)
 
 # Time to fit the model
-cat("\n\nTime to fit the model :", elapsed.time, "s")
+cat("\n\nTime to fit the model :", elapsed.time)
 
 ```
 
 ```{r echo=FALSE}
-
 plot(BAm1s)
-
-gam.check(BAm1s)
-
 ```
 
+
+```{r echo=FALSE}
+gam.check(BAm1s)
+```
+
+## Copula Models on log(BA+1)
+
+```{r echo=FALSE}
+
+BAmC <- fitCopula()
+
+```
 
 
 
