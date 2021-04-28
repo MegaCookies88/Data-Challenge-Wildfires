@@ -18,10 +18,10 @@ library("doParallel")
 library("parallel")
 
 library("randomForest")
+library("gbm")
 
 library("mgcv")
 ```
-
 
 ```{r data, echo=FALSE}
 
@@ -60,8 +60,8 @@ train <- data_train_DF[train_ind, ]
 test <- data_train_DF[-train_ind, ]
 
 # Training : 95/05 - Testing : 07
-train <- data_train_DF[data_train_DF$year %in% c(1995,2005),]
-test <- data_train_DF[data_train_DF$year %in% c(2007),]
+train <- data_train_DF[data_train_DF$year %in% c(1995,2005,2015),]
+test <- data_train_DF[data_train_DF$year %in% c(1997,2007),]
 
 cat("train size =", nrow(train), "- test size =", nrow(test))
 
@@ -155,6 +155,7 @@ S_CNT_p0 <- get_score_cnt(prediction_cnt_prob, test$CNT, u_cnt, weights_cnt)
 cat("S_CNT =", S_CNT_p0)
 
 ```
+
 ```{r echo=FALSE}
 
 # Fitting the model
@@ -213,6 +214,8 @@ cat("\nS_CNT =", S_CNT_lasso)
 ```
 
 
+#-------------------------------------------------------------------------------
+
 
 # BA Models
 
@@ -241,7 +244,7 @@ cat("S_BA =", S_BA_0)
 ```{r echo=FALSE}
 
 # Classifier for BA>0
-rf <- randomForest(as.factor(I(BA>0)) ~ . -1 -CNT,
+rf <- randomForest(as.factor(I(BA>0)) ~ . -1 -CNT -clim1 -clim2,
                    data=train)
 rf
 
@@ -285,42 +288,6 @@ cat("S_BA =", S_BA_1)
 
 ```
 
-```{r BA_lasso, eval=FALSE, include=FALSE}
-
-# Lambda grid
-grid = 10^seq(-3, 3, length = 100)
-
-# CV
-cv.BA <- cv.glmnet(log1p(BA) ~ . -CNT -clim1 -clim2, 
-                    family = gaussian(),
-                    alpha = 1,
-                    nfolds = 5,
-                    parallel = TRUE,
-                    lambda = grid,
-                    data = train)
-plot(cv.BA)
-
-bestlam = cv.BA$lambda.min
-cat("Best Lambda =", bestlam)
-
-# Fitting the model
-mBA_lasso <- glmnet(log1p(BA) ~ . -CNT -clim1 -clim2, 
-                    family = gaussian(),
-                    alpha = 1,
-                    lambda = bestlam,
-                    data = train)
-
-# Prediction 
-# not possible in glmnet to get se.fit so no distribution function
-# Funny comment on some forum for glmnet : "I feel like the only people who would request SE's from a penalized regression model are the same type of people who would grossly misinterpret them."
-prediction_cnt_prob <- predict_ba_prob_gaussian_1(mBA_lasso, test[,-c(1,2,28,29)])
-
-# Score
-S_BA_lasso <- get_score_cnt(prediction_bat_prob, test$BA, u_ba, weights_ba)
-cat("\nS_BA =", S_BA_lasso)
-
-```
-
 ## GAM Gaussian Id on log(BA+1) 
 3923 full data
 
@@ -335,24 +302,24 @@ BAm1s <- bam(log1p(BA) ~ -1 + year + month + s(lon,lat,bs="gp",k=100) + s(area,b
              + s(altiMean,bs="cr",k=20) + s(wind,bs="cr",k=12) + s(RH,bs="cr",k=12)
              + s(clim4,bs="cc",k=7)
              + ti(lc11,wind,k=12) + ti(lc12,wind,k=12) + ti(lc1,wind,k=12) 
-             + ti(lc7,wind,k=12) + ti(lc14,wind,k=12) + s(lc18,bs="cr",k=12),
-             data=data_train_DF[train_ind,],
+             + ti(lc7,wind,k=12) + ti(lc14,wind,k=12) + s(lc18,bs="cr",k=30),
+             data=train,
              family=gaussian(),
              discrete=FALSE,
              cluster=cl)
+
+summary(BAm1s)
+
+# Prediction
+prediction_ba_prob <- predict_ba_prob_gaussian_1(BAm1s, test)
 
 # Close Clusters and stop clock
 if (!is.null(cl)) stopCluster(cl)
 end.time <- Sys.time()
 elapsed.time <- round((end.time - start.time), 3)
 
-summary(BAm1s)
-
-# Prediction
-prediction_ba_prob <- predict_ba_prob_gaussian_1(BAm1s, data_train_DF[-train_ind,])
-
 # Score
-S_BA_1s <- get_score_ba(prediction_ba_prob, data_train_DF[-train_ind,]$BA, u_ba, weights_ba)
+S_BA_1s <- get_score_ba(prediction_ba_prob, test$BA, u_ba, weights_ba)
 cat("S_BA =", S_BA_1s)
 
 # Time to fit the model
@@ -364,22 +331,205 @@ cat("\n\nTime to fit the model :", elapsed.time)
 plot(BAm1s)
 ```
 
-
 ```{r echo=FALSE}
 gam.check(BAm1s)
 ```
 
-## Copula Models on log(BA+1)
+Questions :
+1. The score is nearly the same as the glm without smoothing : Does it mean that the score is low because they both fail to model the tails ?
+2. Speaking of tails, the QQ plot for bam clearly shows there is a problem with tails : Since I used the gaussian family, does it mean if I use the " scat : scaled t for heavy tailed data that would otherwise be modelled as Gaussian " it should improve the model? Since the camputation time is very different (2min vs more than 1h30 (stopped)), can we have an idea before testing?
+3. I also wanted to try the Gumbel location-scale distribution but it is only for gam and not bam so it should be slow.
+4. gam.check seems to be useful for basis dimension selection but how do we use it? Even in the gam book and mgcv docu it isn't clear for me.
+
+## Speeding previous RF model
 
 ```{r echo=FALSE}
 
-BAmC <- fitCopula()
+hist(log(train[train$BA>=1,]$BA), breaks=50)
+par(new=TRUE)
+abline(v=log(u_ba[-1]), col="red")
 
 ```
 
+```{r echol=FALSE}
 
+# Classifier for BA>=1
+rf <- randomForest(as.factor(I(BA>=1)) ~ . -CNT -clim1 -clim2,
+                   data=train)
+rf
 
+```
 
+```{r echol=FALSE}
 
+# Activate Multi-Threads and start clock
+start.time <- Sys.time()
+cl <- makeCluster(6)
+
+# Fitting the model for BA>0
+BAmrfs <- bam(log(BA) ~ -1 + year + month + s(lon,lat,bs="gp",k=100) + s(area,bs="cr",k=12)
+              + s(altiMean,bs="cr",k=20) + s(wind,bs="cr",k=12) + s(RH,bs="cr",k=12)
+              + s(clim4,bs="cc",k=7)
+              + ti(lc11,wind,k=12) + ti(lc12,wind,k=12) + ti(lc1,wind,k=12) 
+              + ti(lc7,wind,k=12) + ti(lc14,wind,k=12) + s(lc18,bs="cr",k=12),
+              data=train[train$BA>=1,],
+              family=gaussian(),
+              discrete=FALSE,
+              cluster=cl)
+
+summary(BAmrfs)
+
+# Prediction
+p0 <- predict(rf, test, type="prob")[,1]
+prediction_ba_prob <- predict_ba_prob_gaussian_0(p0, BAmrfs, test)
+
+# Close Clusters and stop clock
+if (!is.null(cl)) stopCluster(cl)
+end.time <- Sys.time()
+elapsed.time <- round((end.time - start.time), 3)
+
+# Score
+S_BA_rfs <- get_score_ba(prediction_ba_prob, test$BA, u_ba, weights_ba)
+cat("S_BA =", S_BA_rfs)
+
+# Time to fit the model
+cat("\n\nTime to fit the model :", elapsed.time)
+
+```
+
+## Generalized Boosted Regression on log(BA+1)
+
+```{r echo=FALSE}
+
+registerDoParallel(6)
+
+# tic
+start.time <- Sys.time()
+
+set.seed(42)
+BAmGBM <- gbm(log1p(BA) ~ . -CNT -clim1 -clim2, 
+              distribution = "gaussian",
+              interaction.depth = 5,
+              n.trees = 500,
+              n.minobsinnode = 10,
+              shrinkage = 0.1,
+              cv.folds = 10,
+              n.cores = 6,
+              data = train)
+
+# tac
+end.time <- Sys.time()
+elapsed.time <- round((end.time - start.time), 3)
+
+# Prediction
+prediction_ba_prob <- predict_ba_prob_gaussian_gbm1(BAmGBM, test)
+
+# Score
+S_BA_GBM <- get_score_ba(prediction_ba_prob, test$BA, u_ba, weights_ba)
+cat("S_BA =", S_BA_GBM)
+
+# Time to fit the model
+cat("\n\nTime to fit the model :", elapsed.time)
+
+stopImplicitCluster()
+
+```
+
+## Regression-Enhanced Random Forest Algorithm on log(BA+1)
+
+```{r echo=FALSE}
+
+registerDoParallel(6)
+
+# Lambda grid
+grid = 10^seq(-3, 3, length = 100)
+
+# CV
+cv.BA <- cv.glmnet(log1p(BA) ~ . -CNT -clim1 -clim2, 
+                   family = gaussian(),
+                   alpha = 1,
+                   nfolds = 5,
+                   parallel = TRUE,
+                   lambda = grid,
+                   data = train)
+plot(cv.BA)
+
+bestlam = cv.BA$lambda.min
+cat("Best Lambda =", bestlam)
+
+stopImplicitCluster()
+
+```
+
+```{r echo=FALSE}
+
+# New training set based on residuals
+new.train <- train
+new.train["resid"] <- train$BA - predict(cv.BA, train, s="lambda.min")
+
+# tic
+start.time <- Sys.time()
+
+# Random Forest
+rerf <- randomForest(log1p(BA) ~ . -CNT -clim1 -clim2,
+                     data=new.train)
+
+# tac
+end.time <- Sys.time()
+elapsed.time <- round((end.time - start.time), 3)
+
+rerf
+
+```
+
+```{r echo=FALSE}
+
+# Prediction 
+prediction_ba_prob <- predict_ba_prob_gaussian_rerf(cv.BA, rerf, test)
+
+# Score
+S_BA_rerf <- get_score_ba(prediction_ba_prob, test$BA, u_ba, weights_ba)
+cat("S_BA =", S_BA_rerf)
+
+# Time to fit the model
+cat("\n\nTime to fit the model :", elapsed.time)
+
+```
+
+```{r echo=FALSE}
+
+registerDoParallel(6)
+
+# tic
+start.time <- Sys.time()
+
+set.seed(42)
+reGBM <-gbm(log1p(BA) ~ . -CNT -clim1 -clim2, 
+            distribution = "gaussian",
+            interaction.depth = 5,
+            n.trees = 500,
+            n.minobsinnode = 10,
+            shrinkage = 0.1,
+            cv.folds = 10,
+            n.cores = 6,
+            data = new.train)
+
+# tac
+end.time <- Sys.time()
+elapsed.time <- round((end.time - start.time), 3)
+
+# Prediction
+prediction_ba_prob <- predict_ba_prob_gaussian_rerf(cv.BA, reGBM, test)
+
+# Score
+S_BA_reGBM <- get_score_ba(prediction_ba_prob, test$BA, u_ba, weights_ba)
+cat("S_BA =", S_BA_reGBM)
+
+# Time to fit the model
+cat("\n\nTime to fit the model :", elapsed.time)
+
+stopImplicitCluster()
+
+```
 
 
