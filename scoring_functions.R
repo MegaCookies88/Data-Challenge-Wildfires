@@ -43,6 +43,33 @@ predict_ba_prob_gaussian_1 = function(model, test){
   ba_probabilities
 }
 
+# Gaussian GBM for log(BA+1)
+predict_ba_prob_gaussian_gbm1 = function(model, test){
+  prediction = predict(model, test, type="response")
+  #sd = sqrt(sum((mu-mean(prediction))^2)/(length(test)-1)) # same for all -_-
+  sd = sd(prediction)
+  ba_probabilities = matrix(0, nrow(test), length(u_ba))
+  for (i in 1:nrow(test)){
+    mu = prediction[i]
+    ba_probabilities[i,] = pnorm(log(u_ba+1), mean = mu, sd = sd)
+  }
+  ba_probabilities
+}
+
+# RERF for log(BA+1)
+predict_ba_prob_gaussian_rerf = function(lasso_model, rf_model, test){
+  prediction = predict(lasso_model, test, s="lambda.min", type="response")
+  test['resid'] = test$BA - prediction
+  prediction = prediction + predict(rf_model, test)
+  sd = sd(prediction)
+  ba_probabilities = matrix(0, nrow(test), length(u_ba))
+  for (i in 1:nrow(test)){
+    mu = prediction[i]
+    ba_probabilities[i,] = pnorm(log(u_ba+1), mean = mu, sd = sd)
+  }
+  ba_probabilities
+}
+
 # Scoring function
 get_score_cnt = function(prediction_cnt, obs, u_cnt, weights_cnt){ 
   distr_obs = c() 
