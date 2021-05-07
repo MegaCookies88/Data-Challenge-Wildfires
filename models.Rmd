@@ -2,8 +2,14 @@
 title: "Wildfire_Challenge"
 author: "Mongi Nouira"
 date: "3/27/2021"
-output: html_document
+output: 
+  html_document:
+    keep_md: true
 ---
+
+```{r include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, fig.align = "center",  cache=TRUE)
+```
 
 ```{r libraries, include=FALSE}
 library("FactoMineR")
@@ -23,7 +29,7 @@ library("gbm")
 library("mgcv")
 ```
 
-```{r data, echo=FALSE}
+```{r data, include=FALSE}
 
 # Loading the data
 load("~/Documents/Cours/EPFL MA2/R_WorkSpace/Wildfire_Challenge/data_train.RData")
@@ -42,26 +48,20 @@ data_train_DF$wind <- scale(sqrt(data_train_DF$clim1^2 + data_train_DF$clim2^2))
 data_train_DF$RH <- 100 * exp(17.625*(data_train_DF$clim3-273.15)/(data_train_DF$clim3-39.11)) /
                           exp(17.625*(data_train_DF$clim4-273.15)/(data_train_DF$clim4-39.11))
 
-# Scaling : Standard Scale
-for (i in 8:length(data_train_DF)) {
-  data_train_DF[,i] = scale(data_train_DF[,i])
-}
-
 # Removing NA in new DF
 data_test_DF <- data_train_DF[rowSums(is.na(data_train_DF)) > 0,]
 data_train_DF <- data_train_DF[rowSums(is.na(data_train_DF)) == 0,]
 
-# 80% training / 20% testing 
-# First I tried about 80k missing CNT as in the challenge
-# Then I chose to let the benchmark score be a little more than the one in the challenge
-set.seed(42)
-train_ind <- sample(seq_len(nrow(data_train_DF)), size = floor(0.822 * nrow(data_train_DF)))
-train <- data_train_DF[train_ind, ]
-test <- data_train_DF[-train_ind, ]
-
 # Training : 95/05 - Testing : 07
 train <- data_train_DF[data_train_DF$year %in% c(1995,2005,2015),]
 test <- data_train_DF[data_train_DF$year %in% c(1997,2007),]
+
+# Scaling : Standard Scale
+for (i in 8:length(data_train_DF)) {
+  train[,i] = scale(train[,i])
+  test[,i] = scale(test[,i])
+}
+rm(i)
 
 cat("train size =", nrow(train), "- test size =", nrow(test))
 
@@ -69,7 +69,7 @@ cat("train size =", nrow(train), "- test size =", nrow(test))
 
 # Principal Component Analysis (PCA)
 
-```{r PCA, echo=FALSE, out.width="100%"}
+```{r PCA, out.width="100%"}
 
 res.pca <- PCA(data_train_DF[,3:38], graph = FALSE)
 print(res.pca)
@@ -90,11 +90,15 @@ fviz_contrib(res.pca, choice = "var", axes = 1:2, top = 10)
 
 ```
 
+
+#-------------------------------------------------------------------------------
+
+
 # CNT Models
 
 ## Benchmark Model : GLM Poisson Log
 
-```{r benchmark, echo=FALSE}
+```{r benchmark}
 
 # Fitting the model
 m0 <- glm(CNT ~ . -BA -wind -RH, 
@@ -115,7 +119,7 @@ cat("S_CNT =", S_CNT_0)
 
 ## GLM Poisson log
 
-```{r glm_poisson, echo=FALSE}
+```{r glm_poisson}
 
 # Fitting the model
 m1 <- glm(CNT ~ -1 + factor(month) 
@@ -139,7 +143,7 @@ cat("S_CNT =", S_CNT_1)
 
 ## Zero Inflated Poisson
 
-```{r zero_poisson, echo=FALSE}
+```{r zero_poisson}
 
 # Fitting the model
 mp0 <- zeroinfl(CNT ~ . -BA -1 -year -clim1 -clim2 -lon -lat -area -altiSD -lc6 -lc17
@@ -156,7 +160,7 @@ cat("S_CNT =", S_CNT_p0)
 
 ```
 
-```{r echo=FALSE}
+```{r}
 
 # Fitting the model
 mp1 <- zeroinfl(CNT ~ . -BA -1 -clim1 -clim2 -year -month -lat -altiSD
@@ -176,7 +180,7 @@ cat("S_CNT =", S_CNT_p1)
 
 ## GLM m0 Lasso
 
-```{r CNT_lasso, echo=FALSE}
+```{r CNT_lasso}
 
 registerDoParallel(4)
 
@@ -221,7 +225,7 @@ cat("\nS_CNT =", S_CNT_lasso)
 
 ## Benchmark Model : Mixture of m0 and GLM Gaussian Id on logBA
 
-```{r echo=FALSE}
+```{r}
 
 # Fitting the model
 BAm0 <- glm(log(BA) ~ . -CNT -wind -RH, 
@@ -241,7 +245,7 @@ cat("S_BA =", S_BA_0)
 
 ## Mixture of Random Forest Classifier and GLM Gaussian Id on logBA
 
-```{r echo=FALSE}
+```{r}
 
 # Classifier for BA>0
 rf <- randomForest(as.factor(I(BA>0)) ~ . -1 -CNT -clim1 -clim2,
@@ -250,7 +254,7 @@ rf
 
 ```
 
-```{r echo=FALSE}
+```{r}
 
 # Fitting the model for BA>0
 BAmrf <- glm(log(BA) ~ . -CNT -clim1 -clim2, 
@@ -271,7 +275,7 @@ cat("S_BA =", S_BA_rf)
 ## GLM Gaussian Id on log(BA+1)
 Tested it on 80k -> better than benchmark with a score of 3932 (about rank 4)
 
-```{r echo=FALSE}
+```{r}
 
 # Fitting the model
 BAm1 <- glm(log1p(BA) ~ . -1 -CNT -clim1 -clim2 -lc6 -clim6 -lc10 -clim8, 
@@ -291,7 +295,7 @@ cat("S_BA =", S_BA_1)
 ## GAM Gaussian Id on log(BA+1) 
 3923 full data
 
-```{r echo=FALSE}
+```{r}
 
 # Activate Multi-Threads and start clock
 start.time <- Sys.time()
@@ -327,23 +331,17 @@ cat("\n\nTime to fit the model :", elapsed.time)
 
 ```
 
-```{r echo=FALSE}
+```{r}
 plot(BAm1s)
 ```
 
-```{r echo=FALSE}
+```{r}
 gam.check(BAm1s)
 ```
 
-Questions :
-1. The score is nearly the same as the glm without smoothing : Does it mean that the score is low because they both fail to model the tails ?
-2. Speaking of tails, the QQ plot for bam clearly shows there is a problem with tails : Since I used the gaussian family, does it mean if I use the " scat : scaled t for heavy tailed data that would otherwise be modelled as Gaussian " it should improve the model? Since the camputation time is very different (2min vs more than 1h30 (stopped)), can we have an idea before testing?
-3. I also wanted to try the Gumbel location-scale distribution but it is only for gam and not bam so it should be slow.
-4. gam.check seems to be useful for basis dimension selection but how do we use it? Even in the gam book and mgcv docu it isn't clear for me.
-
 ## Speeding previous RF model
 
-```{r echo=FALSE}
+```{r}
 
 hist(log(train[train$BA>=1,]$BA), breaks=50)
 par(new=TRUE)
@@ -351,7 +349,7 @@ abline(v=log(u_ba[-1]), col="red")
 
 ```
 
-```{r echol=FALSE}
+```{r}
 
 # Classifier for BA>=1
 rf <- randomForest(as.factor(I(BA>=1)) ~ . -CNT -clim1 -clim2,
@@ -360,7 +358,7 @@ rf
 
 ```
 
-```{r echol=FALSE}
+```{r}
 
 # Activate Multi-Threads and start clock
 start.time <- Sys.time()
@@ -399,9 +397,9 @@ cat("\n\nTime to fit the model :", elapsed.time)
 
 ## Generalized Boosted Regression on log(BA+1)
 
-```{r echo=FALSE}
+```{r}
 
-registerDoParallel(6)
+registerDoParallel(10)
 
 # tic
 start.time <- Sys.time()
@@ -414,7 +412,7 @@ BAmGBM <- gbm(log1p(BA) ~ . -CNT -clim1 -clim2,
               n.minobsinnode = 10,
               shrinkage = 0.1,
               cv.folds = 10,
-              n.cores = 6,
+              n.cores = 10,
               data = train)
 
 # tac
@@ -435,101 +433,67 @@ stopImplicitCluster()
 
 ```
 
-## Regression-Enhanced Random Forest Algorithm on log(BA+1)
+## GBM on log(BA+1) improvement :
 
-```{r echo=FALSE}
+```{r}
 
-registerDoParallel(6)
+# Adding mean fire per voxels
+mean_CNT_voxel <- aggregate(train[,1], by=list(train$lon,train$lat), mean)
+train$mean_fire <- mapply(function(x,y) mean_CNT_voxel[mean_CNT_voxel$Group.1==x & mean_CNT_voxel$Group.2==y,3],
+                          train$lon, train$lat)
+test$mean_fire <- mapply(function(x,y) mean_CNT_voxel[mean_CNT_voxel$Group.1==x & mean_CNT_voxel$Group.2==y,3],
+                          test$lon, test$lat)
 
-# Lambda grid
-grid = 10^seq(-3, 3, length = 100)
-
-# CV
-cv.BA <- cv.glmnet(log1p(BA) ~ . -CNT -clim1 -clim2, 
-                   family = gaussian(),
-                   alpha = 1,
-                   nfolds = 5,
-                   parallel = TRUE,
-                   lambda = grid,
-                   data = train)
-plot(cv.BA)
-
-bestlam = cv.BA$lambda.min
-cat("Best Lambda =", bestlam)
-
-stopImplicitCluster()
-
-```
-
-```{r echo=FALSE}
-
-# New training set based on residuals
-new.train <- train
-new.train["resid"] <- train$BA - predict(cv.BA, train, s="lambda.min")
-
-# tic
-start.time <- Sys.time()
-
-# Random Forest
-rerf <- randomForest(log1p(BA) ~ . -CNT -clim1 -clim2,
-                     data=new.train)
-
-# tac
-end.time <- Sys.time()
-elapsed.time <- round((end.time - start.time), 3)
-
-rerf
-
-```
-
-```{r echo=FALSE}
-
-# Prediction 
-prediction_ba_prob <- predict_ba_prob_gaussian_rerf(cv.BA, rerf, test)
-
-# Score
-S_BA_rerf <- get_score_ba(prediction_ba_prob, test$BA, u_ba, weights_ba)
-cat("S_BA =", S_BA_rerf)
-
-# Time to fit the model
-cat("\n\nTime to fit the model :", elapsed.time)
-
-```
-
-```{r echo=FALSE}
-
-registerDoParallel(6)
+registerDoParallel(10)
 
 # tic
 start.time <- Sys.time()
 
 set.seed(42)
-reGBM <-gbm(log1p(BA) ~ . -CNT -clim1 -clim2, 
-            distribution = "gaussian",
-            interaction.depth = 5,
-            n.trees = 500,
-            n.minobsinnode = 10,
-            shrinkage = 0.1,
-            cv.folds = 10,
-            n.cores = 6,
-            data = new.train)
+
+BAmGBM_1 <- gbm(log1p(BA) ~ . -CNT -clim1 -clim2, 
+                distribution = "gaussian",
+                interaction.depth = 5,
+                n.trees = 500,
+                n.minobsinnode = 10,
+                shrinkage = 0.1,
+                cv.folds = 10,
+                n.cores = 10,
+                data = train)
+
+BAmGBM_2 <- gbm(log1p(BA) ~ . -clim1 -clim2, 
+                distribution = "gaussian",
+                interaction.depth = 5,
+                n.trees = 500,
+                n.minobsinnode = 10,
+                shrinkage = 0.1,
+                cv.folds = 10,
+                n.cores = 10,
+                data = train)
 
 # tac
 end.time <- Sys.time()
 elapsed.time <- round((end.time - start.time), 3)
 
 # Prediction
-prediction_ba_prob <- predict_ba_prob_gaussian_rerf(cv.BA, reGBM, test)
+prediction_ba_prob <- predict_ba_prob_gaussian_gbm1(BAmGBM_1, test)
+prediction_ba_prob_2 <- predict_ba_prob_gaussian_gbm1(BAmGBM_2, test)
+
+# Random combination based on weights : CNT 64% NA and 36 not NA
+test_ind <- sample(seq_len(nrow(test)), size = floor(0.64 * nrow(test)))
+prediction_ba_prob[-test_ind,] <- prediction_ba_prob_2[-test_ind,]
 
 # Score
-S_BA_reGBM <- get_score_ba(prediction_ba_prob, test$BA, u_ba, weights_ba)
-cat("S_BA =", S_BA_reGBM)
+S_BA_GBM_F <- get_score_ba(prediction_ba_prob, test$BA, u_ba, weights_ba)
+cat("S_BA =", S_BA_GBM_F)
 
 # Time to fit the model
 cat("\n\nTime to fit the model :", elapsed.time)
 
 stopImplicitCluster()
-
+  
 ```
+
+
 
 
