@@ -55,7 +55,7 @@ predict_ba_prob_gaussian_gbm1 = function(model, test){
   ba_probabilities
 }
 
-# Scoring function
+# Scoring function (multiply by 8e4 mean score to approximate but too optimistic for BA)
 get_score_cnt = function(prediction_cnt, obs, u_cnt, weights_cnt){ 
   distr_obs = c() 
   for(k in 1:length(u_cnt)){ 

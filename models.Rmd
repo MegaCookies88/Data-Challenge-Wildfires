@@ -52,7 +52,7 @@ data_train_DF$RH <- 100 * exp(17.625*(data_train_DF$clim3-273.15)/(data_train_DF
 data_test_DF <- data_train_DF[rowSums(is.na(data_train_DF)) > 0,]
 data_train_DF <- data_train_DF[rowSums(is.na(data_train_DF)) == 0,]
 
-# Training : 95/05 - Testing : 07
+# Training : 95/05/15 - Testing : 97/07
 train <- data_train_DF[data_train_DF$year %in% c(1995,2005,2015),]
 test <- data_train_DF[data_train_DF$year %in% c(1997,2007),]
 
@@ -69,7 +69,7 @@ cat("train size =", nrow(train), "- test size =", nrow(test))
 
 # Principal Component Analysis (PCA)
 
-```{r PCA, out.width="100%"}
+```{r PCA, out.width="70%"}
 
 res.pca <- PCA(data_train_DF[,3:38], graph = FALSE)
 print(res.pca)
@@ -182,7 +182,7 @@ cat("S_CNT =", S_CNT_p1)
 
 ```{r CNT_lasso}
 
-registerDoParallel(4)
+registerDoParallel(10)
 
 # Lambda grid
 grid = 10^seq(-2, 2, length = 100)
@@ -214,6 +214,8 @@ prediction_cnt_prob <- predict_cnt_prob_poisson(mCNT_lasso, test[,-c(1,2,28,29)]
 # Score
 S_CNT_lasso <- get_score_cnt(prediction_cnt_prob, test$CNT, u_cnt, weights_cnt)
 cat("\nS_CNT =", S_CNT_lasso)
+
+stopImplicitCluster()
 
 ```
 
@@ -408,10 +410,10 @@ set.seed(42)
 BAmGBM <- gbm(log1p(BA) ~ . -CNT -clim1 -clim2, 
               distribution = "gaussian",
               interaction.depth = 5,
-              n.trees = 500,
+              n.trees = 1000,
               n.minobsinnode = 10,
               shrinkage = 0.1,
-              cv.folds = 10,
+              cv.folds = 0,
               n.cores = 10,
               data = train)
 
@@ -454,20 +456,20 @@ set.seed(42)
 BAmGBM_1 <- gbm(log1p(BA) ~ . -CNT -clim1 -clim2, 
                 distribution = "gaussian",
                 interaction.depth = 5,
-                n.trees = 500,
+                n.trees = 1000,
                 n.minobsinnode = 10,
                 shrinkage = 0.1,
-                cv.folds = 10,
+                cv.folds = 0,
                 n.cores = 10,
                 data = train)
 
 BAmGBM_2 <- gbm(log1p(BA) ~ . -clim1 -clim2, 
                 distribution = "gaussian",
                 interaction.depth = 5,
-                n.trees = 500,
+                n.trees = 1000,
                 n.minobsinnode = 10,
                 shrinkage = 0.1,
-                cv.folds = 10,
+                cv.folds = 0,
                 n.cores = 10,
                 data = train)
 
