@@ -27,3 +27,5 @@ score.R
 .ipynb_checkpoints/prediction_ba-checkpoint.R
 .ipynb_checkpoints/wildfires_models-checkpoint.ipynb
 references/1405.0352.pdf
+.ipynb_checkpoints/train-checkpoint.csv
+.ipynb_checkpoints/test-checkpoint.csv
