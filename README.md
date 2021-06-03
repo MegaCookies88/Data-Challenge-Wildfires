@@ -8,8 +8,8 @@ A comprehensive wildfire dataset covering the period from 1993 to 2015 for the c
 The goal of this challenge is to estimate the predictive distributions of the number of wildfires (CNT) and aggregated burnt area of wildfires in acres (BA) for a validation set. The scores used for the competition are variants of weighted ranked probability scores.
 
 ## Repository files :
-- wildfires.ipynb : Data analysis, visualization.
-- wildfires_models.ipynb : Some Models (changed from R to python sklearn for computation time).
-- models.Rmd : Every tested model with results and prediction scores.
-- prediction_cnt.R : Best CNT model and challenge distribution prediction.
-- prediction_ba.R : Best BA model and challenge distribution prediction.
+- wildfires.ipynb : Exploratory Data Analysis (Check EDA.pdf for details)
+- wildfires_models.ipynb : Some Models (Switched from R to python due for lower computation time)
+- models.Rmd : Every tested model with results and prediction scores (Check html_render)
+- prediction_cnt.R : Best CNT model and challenge distribution prediction
+- prediction_ba.R : Best BA model and challenge distribution prediction
